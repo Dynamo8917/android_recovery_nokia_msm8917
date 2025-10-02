@@ -8,14 +8,14 @@
 # Inherit from those products. Most specific first.
 $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
 
-# Inherit some common Omni stuff.
-$(call inherit-product, vendor/omni/config/common.mk)
+# Inherit some common PBRP stuff.
+$(call inherit-product, vendor/pb/config/common.mk)
 
 # Inherit from E2M device
 $(call inherit-product, device/fih/E2M/device.mk)
 
 PRODUCT_DEVICE := E2M
-PRODUCT_NAME := omni_E2M
+PRODUCT_NAME := pb_E2M
 PRODUCT_BRAND := FIH
 PRODUCT_MODEL := Nokia 2.1
 PRODUCT_MANUFACTURER := fih

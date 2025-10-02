@@ -1,44 +1,41 @@
-name: Build & Release
+name: Recovery Build
 
 on:
   workflow_dispatch:
     inputs:
       MANIFEST_BRANCH:
-        description: 'MANIFEST_BRANCH'
+        description: Manifest Branch
         required: true
-        default: 'twrp-9.0'
+        default: android-9.0
       DEVICE_TREE_URL:
-        description: 'DEVICE_TREE_URL'
+        description: Device Tree URL
         required: true
         default: 'https://github.com/Dynamo8917/android_recovery_nokia_msm8917'
       DEVICE_TREE_BRANCH:
-        description: 'DEVICE_TREE_BRANCH'
+        description: Device Tree Branch
         required: true
-        default: 'twrp'
+        default: pbrp
       NAME:
         description: 'NAME'
         required: true
-        default: 'twrp-3.7.0_9-0'
-      FILE_NAME:
-        description: 'FILE_NAME'
-        required: true
-        default: 'twrp-3.7.0_9-0-E2M-lavenly'
+        default: 'PBRP-4.0'
       DEVICE_PATH:
-        description: 'DEVICE_PATH'
+        description: Path the device tree should be synced to, relative to source root
         required: true
-        default: 'device/fih/E2M'
-      DEVICE_NAME:
-        description: 'DEVICE_NAME'
+        default: device/fih/E2M
+      DEVICE_MAKEFILE:
+        description: 'Name of device-specific makefile from tree (format: <PREFIX>_<DEVICE_NAME>)'
         required: true
-        default: 'E2M'
-      MAKEFILE_NAME:
-        description: 'MAKEFILE_NAME'
-        required: true
-        default: 'omni_E2M'
+        default: pb_E2M
       BUILD_TARGET:
-        description: 'BUILD_TARGET'
+        type: choice
+        description: Partition containing recovery ramdisk
+        options:
+        - boot
+        - recovery
+        - vendor_boot
         required: true
-        default: 'recovery'
+        default: recovery
 
 jobs:
   build:
@@ -49,15 +46,21 @@ jobs:
     - name: Display Run Parameters
       run: |
         echo "::group::User Environment Variables"
-        echo "Manifest: minimal-manifest-twrp/platform_manifest_twrp_omni"
-        echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
-        echo "Device Tree URL: ${{ github.event.inputs.DEVICE_TREE_URL }}"
-        echo "Device Tree Branch: ${{ github.event.inputs.DEVICE_TREE_BRANCH }}"
-        echo "Device Path: ${{ github.event.inputs.DEVICE_PATH }}"
-        echo "Device Name: ${{ github.event.inputs.DEVICE_NAME }}"
-        echo "Makefile Name: ${{ github.event.inputs.MAKEFILE_NAME }}"
-        echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
+        echo "Manifest Branch: ${{ inputs.MANIFEST_BRANCH }}"
+        echo "Device Tree URL: ${{ inputs.DEVICE_TREE_URL }}"
+        echo "Device Tree Branch: ${{ inputs.DEVICE_TREE_BRANCH }}"
+        echo "Device Path: ${{ inputs.DEVICE_PATH }}"
+        echo "Device Makefile: ${{ inputs.DEVICE_MAKEFILE }}.mk"
+        echo "Build Target: ${{ inputs.BUILD_TARGET }}.img"
         echo "::endgroup::"
+
+    - name: Identify Vendor
+      run: echo -e "prefix=$(awk -F_ '{print $1}' <<< ${{ inputs.DEVICE_MAKEFILE }})" >> ${GITHUB_OUTPUT}
+      id: vendorname
+
+    - name: Identify Device
+      run: echo -e "device=$(grep -oP '(?<=_).*' <<< ${{ inputs.DEVICE_MAKEFILE }})" >> ${GITHUB_OUTPUT}
+      id: devicename
 
     - name: Check Out
       uses: actions/checkout@v4
@@ -65,22 +68,24 @@ jobs:
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
 
+    - name: Set Swap Space
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 24
+
     - name: Prepare the environment
       run: |
-        sudo apt update && sudo apt upgrade -y
-        DEBIAN_FRONTEND=noninteractive sudo apt install -yq \
-            linux-modules-extra-$(uname -r) \
-            gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib \
-            libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils \
-            xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev \
-            libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools \
-            imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3 tar
+        sudo apt update
+        sudo apt -y upgrade
+        sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libtinfo5
+        sudo add-apt-repository universe
+        sudo apt -y install libncurses5
 
     - name: Install OpenJDK
       uses: actions/setup-java@v4
       with:
-        distribution: 'zulu'
-        java-version: '11'
+        distribution: zulu
+        java-version: 8
 
     - name: Install repo
       run: |
@@ -93,11 +98,9 @@ jobs:
       run: |
         mkdir workspace
         cd workspace
-        echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
         git config --global user.name "${GITHUB_ACTOR}"
         git config --global user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
-        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni -b ${{ github.event.inputs.MANIFEST_BRANCH }}
-      id: pwd
+        repo init --depth=1 -u https://github.com/Dynamo8917/PBRP -b ${{ inputs.MANIFEST_BRANCH }}
 
     - name: Repo Sync
       run: |
@@ -106,20 +109,15 @@ jobs:
 
     - name: Clone device tree
       run: |
-        git clone ${{ github.event.inputs.DEVICE_TREE_URL }} -b ${{ github.event.inputs.DEVICE_TREE_BRANCH }} ./${{ github.event.inputs.DEVICE_PATH }}
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        git clone ${{ inputs.DEVICE_TREE_URL }} -b ${{ inputs.DEVICE_TREE_BRANCH }} ./${{ inputs.DEVICE_PATH }}
+      working-directory: workspace
 
     - name: Sync Device Dependencies
       run: |
-        bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ github.event.inputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
+        bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ inputs.DEVICE_PATH }}/${{ steps.vendorname.outputs.prefix }}.dependencies
         repo sync -j$(nproc --all)
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+      working-directory: workspace
       continue-on-error: true
-
-    - name: Set Swap Space
-      uses: pierotofy/set-swap-space@master
-      with:
-        swap-size-gb: 12
 
     - name: Install Python 2
       run: |
@@ -128,22 +126,21 @@ jobs:
 
     - name: Building recovery
       run: |
-        source build/envsetup.sh
-        export ALLOW_MISSING_DEPENDENCIES=true
-        lunch ${{ github.event.inputs.MAKEFILE_NAME }}-eng && make clean && make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
-        mv out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_TARGET }}.img out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.FILE_NAME }}.img
-      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        . build/envsetup.sh
+        lunch ${{ inputs.DEVICE_MAKEFILE }}-eng
+        mka pbrp
+      working-directory: workspace
 
     - name: Upload to Release
       uses: softprops/action-gh-release@v2
       with:
-        files: | 
-          workspace/out/target/product/${{ github.event.inputs.DEVICE_NAME }}/${{ github.event.inputs.FILE_NAME }}.img
+        files: |
+          workspace/out/target/product/${{ steps.devicename.outputs.device }}/PBRP-${{ steps.devicename.outputs.device }}*
         name: ${{ github.event.inputs.NAME }}
         tag_name: ${{ github.run_id }}
         body: |
-          Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-          Device: ${{ github.event.inputs.DEVICE_NAME }}
-          Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+          Manifest: ${{ inputs.MANIFEST_BRANCH }}
+          Device: ${{ steps.devicename.outputs.device }}
+          Target: ${{ inputs.BUILD_TARGET }}.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

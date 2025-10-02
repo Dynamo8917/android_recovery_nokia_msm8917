@@ -1,6 +1,6 @@
 Device configuration for Nokia 2.1  (_E2M_)
 =====================================================
-- TeamWin Recovery Project
+- PitchBlack Recovery Project
 
 Basic   | Spec Sheet
 -------:|:-------------------------

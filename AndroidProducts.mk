@@ -6,9 +6,4 @@
 #
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/omni_E2M.mk
-
-COMMON_LUNCH_CHOICES := \
-    omni_E2M-user \
-    omni_E2M-userdebug \
-    omni_E2M-eng
+    $(LOCAL_DIR)/pb_E2M.mk
